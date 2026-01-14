@@ -1,0 +1,874 @@
+******************************************
+******************************************
+******************************************
+******************************************
+****************Klara Raiber *************
+*****Unpaid Care & Job Satisfaction*******
+**************STATA 17********************
+******************************************
+******************************************
+******************************************
+******************************************
+
+
+clear
+set more off
+
+capture log close
+
+set maxvar 32767
+set seed 21091994
+
+ssc install catplot, replace
+
+cd ""  // adapt to your environment
+use "a_indresp.dta", clear
+numlabel, add
+
+***merge other waves 
+
+merge 1:1 pidp using "b_indresp.dta"  // wave 2
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "c_indresp.dta"  // wave 3
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "d_indresp.dta"  // wave 4
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "e_indresp.dta"  // wave 5
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "f_indresp.dta"  // wave 6
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "g_indresp.dta"  // wave 7
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "h_indresp.dta"  // wave 8
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "i_indresp.dta"  // wave 9
+drop _merge // drop merge variable 
+
+merge 1:1 pidp using "j_indresp.dta"  // wave 10
+drop _merge // drop merge variable 
+
+
+
+
+*keep variables that are needed
+keep pidp *aidhh *aidxhh *aidhrs *jbsat *empchk *jbsamr *wkplsam *matlv *jbterm1 *wkaut5 *jbsoc00chk *jbmngrchk *jbmngr *jbsizechk *jbsize *jbsect *jbhrs *jshrs *jbttwt *jbsemp *jspl *stendreas *birthy *istrtdaty *scsex *livesp_dv *cohab_dv *nch14resp *nch415resp *jbstat *sex *nchresp *aideft *aidhua1 *aidhua2 *aidhua3 *aidhu1 *aidhu2 *ppno *allch01 *allch02 *allch03 *allch04 // 
+
+
+drop *_ff_* // drop unwanted variables
+drop *_pbirthy
+
+*save merged data set
+save "merged_UKDA_wide", replace
+
+********************************************************************
+*use wide data
+cd ""  // adapt to your environment
+use "merged_UKDA_wide.dta", clear
+numlabel, add
+
+*reshape 
+
+*rename variables
+
+rename a_* *1
+rename b_* *2
+rename c_* *3
+rename d_* *4
+rename e_* *5
+rename f_* *6
+rename g_* *7
+rename h_* *8
+rename i_* *9
+rename j_* *10 
+
+
+
+reshape long aidhh aidxhh aidhrs jbsat empchk jbsamr wkplsam matlv jbterm1 jbsoc00chk jbmngrchk jbmngr jbsizechk jbsize jbsect wkaut5 jbhrs jbttwt jspl stendreas jshrs birthy jbsemp istrtdaty scsex livesp_dv cohab_dv nch14resp nch415resp jbstat sex nchresp aideft aidhua1 aidhua2 aidhua3 aidhu1 aidhu2 ppno allch01 allch02 allch03 allch04, i(pidp) j(wave) 
+
+*save reshaped data set
+save "merged_UKDA_long", replace
+
+*************************************************************************
+*data preparation
+
+cd ""  // adapt to your environment
+use "merged_UKDA_long.dta", clear
+numlabel, add
+
+*make it a panel
+xtset pidp wave
+
+*inital data set
+xtdescribe
+
+*inclusion criteria 1: working age
+tab istrtdaty, m
+tab birthy, m
+gen age = istrtdaty - birthy if istrtdaty > 0 & birthy > 0
+tab age, m
+tab age
+
+*exclude very young respondent:
+drop if age < 16
+drop if age >= 66 
+
+xtdescribe
+
+*inclusion criteria 2: where the respondent is employed (not self-employed)
+tab jbstat
+keep if jbsat > 0 & jbstat == 2 // here already because changes should be coded on waves later included 
+tab jbstat
+xtdescribe
+
+**************Main predictors**************
+
+******************
+*care by intensity
+gen care = .
+replace care = 0 if aidhh == 2 | aidxhh == 2
+replace care = 1 if aidhh == 1 | aidxhh == 1
+
+tab care aidhrs, m
+
+*include hours:
+tab aidhrs if  aidhrs >=  -1  // 2.82% varies below 20, don't know 0.27%, other 1.02% 
+replace care = 2 if care == 1 & aidhrs >= 3 &  aidhrs != 8  &  aidhrs != 97
+replace care = . if aidhrs == -1 | aidhrs == 97 | aidhrs == -2
+tab care aidhrs, m
+tab care, m
+tab care
+
+label define care 0 "not provided care" 1 "provided non-intensive care" 2 "provided intensive care" 
+label values care care
+
+*include hours - but different coding for excluding 'varies under 20 hours':
+gen care_other = .
+replace care_other = 0 if aidhh == 2 | aidxhh == 2
+replace care_other = 1 if aidhh == 1 | aidxhh == 1
+replace care_other = 2 if care_other == 1 & aidhrs >= 3 &  aidhrs != 8  &  aidhrs != 97
+replace care_other = . if aidhrs == -1 | aidhrs == 97 | aidhrs == -2 | aidhrs == 8
+tab care_other aidhrs, m
+
+
+label values care_other care  
+
+
+xtset pidp wave
+
+*keep only valid caregiving information to make it easiert to make a stable variable
+keep if care != .
+
+
+*drop care_stable
+gen care_stable = care
+bysort pidp (wave) : replace care_stable=care_stable[_n-1] if care_stable[_n-1] > care & care[_n-1] != .
+
+tab care_stable, m
+tab care_stable jbsat, m
+tab care_stable care
+label values care_stable care 
+
+
+*************
+*For Rubustness Check
+*Same but without 'varies under 20 hours':
+gen care_stable_other = care_other
+bysort pidp (wave) : replace care_stable_other=care_stable_other[_n-1] if care_stable_other[_n-1] > care_other & care_other[_n-1] != .
+
+
+*include stopping 
+gen care_stable2 = care
+bysort pidp (wave) : replace care_stable2 = care_stable2[_n-1] if care_stable2[_n-1] > care & care[_n-1] != .
+bysort pidp (wave) : replace care_stable2 = 3 if ((care_stable2[_n-1] == 1 | care_stable2[_n-1] == 2) & care_stable2[_n-1] != . & care == 0) & ((care[_n+1] == 0 | care[_n+1] == .)  &  (care[_n+2] == 0 | care[_n+2] == .) &  (care[_n+3] == 0 | care[_n+3] == .) &  (care[_n+4] == 0 | care[_n+4] == .) & (care[_n+5] == 0 | care[_n+5] == .) &  (care[_n+6] == 0 | care[_n+6] == .) &  (care[_n+7] == 0 | care[_n+7] == .)) // had care before, does not care anymore (no care, and no care in all episodes after)
+bysort pidp (wave) : replace care_stable2 = 3 if care_stable2[_n-1] == 3 // after stopping, keep it on stopping
+
+
+label define care_stable2 0 "not provided care"  1 "provided non-intensive care" 2 "provided intensive care"   3 "care stopped"
+label values care_stable2 care_stable2 
+
+*exclude non-caregiving epsiodes after starting care_dif
+gen care_stable_without_non = care_stable
+
+bysort pidp (wave) : replace care_stable_without_non = 3 if care == 0 & care_stable[_n-1] > 0 & care_stable[_n-1] != . 
+
+tab   care_stable_without_non
+
+
+
+*number of observation
+bysort pidp: gen numberofobs = _n
+
+
+******************
+*care by duration
+gen care_dur = 0 if care == 0
+bysort pidp (wave) : replace care_dur = 1 if care > 0 & (care[_n-1] == 0 | care[_n-1] == .)
+bysort pidp (wave) : replace care_dur = 2 if care > 0 & (care_stable[_n-1] == 1 | care_stable[_n-1] == 2)
+bysort pidp (wave) : replace care_dur = 1 if (care_dur[_n-1] == 1 & care_dur != 2)
+bysort pidp (wave) : replace care_dur = 2 if (care_dur[_n-1] == 2 & care_dur == 0)
+
+
+tab care_dur, m
+tab care_stable care_dur, m 
+
+label define care_dur 0 "not provided care"  1 "started newly caregiving" 2 "provided sequential care"
+label values care_dur care_dur
+
+*include stopping
+gen care_dur2 = 0 if care == 0
+bysort pidp (wave) : replace care_dur2 = 1 if care > 0 & (care[_n-1] == 0 | care[_n-1] == .)
+bysort pidp (wave) : replace care_dur2 = 2 if care > 0 & (care_stable[_n-1] == 1 | care_stable[_n-1] == 2)
+bysort pidp (wave) : replace care_dur2 = 1 if (care_dur2[_n-1] == 1 & care_dur2 != 2)
+bysort pidp (wave) : replace care_dur2 = 2 if (care_dur2[_n-1] == 2 & care_dur2 == 0)
+replace care_dur2 = 3 if care_stable2 == 3
+
+
+label define care_dur2 0 "not provided care" 1 "started caregiving" 2 "provided sequential care" 3 "care stopped"
+label values care_dur2 care_dur2
+
+
+*care difference for descriptives
+gen care_dif = D.care
+tab care_dif
+tab care_dif wave
+ 
+
+*********************************************************
+*Controls
+
+
+*age squared
+gen age_square = age*age
+tab age_square
+
+*partner
+tab livesp_dv cohab_dv, m // combine those for partner living in HH
+
+gen partner = 1
+replace partner = 0 if livesp_dv == 0 & cohab_dv == 0
+tab partner, m 
+
+label define partner 0 "no partner living in HH" 1 "partner living in HH"
+label values partner partner
+
+tab partner
+
+
+*children
+tab nchresp nch415resp, m
+tab nchresp
+
+*drop children
+gen children = .
+replace children = 0 if nchresp == 0 & nch415resp == 0
+replace children = 1 if nchresp >= 1 & nch415resp == 0
+replace children = 2 if nch415resp >= 1 & children == . 
+
+tab children, m 
+tab children  nchresp, m
+tab children  nch415resp, m
+label define children 0 "no children below 16" 1 "children below 4" 2 "children between 4 and 15"
+label values children children
+
+
+*job changes
+tab empchk 
+tab empchk wave, m // wave 1 missing //routing: In paid employment at last interview or did no paid work at last interview but claims employment or self-employment
+
+tab empchk // continuously  working
+tab jbsamr // continuously  same employer
+tab wkplsam  // continuously  same job
+
+gen jobcha = 0
+replace jobcha = 1 if empchk == 2 | jbsamr == 2 | wkplsam == 2 
+tab jobcha
+tab jobcha wave
+
+*drop sumjobcha
+bysort pidp (wave) : gen sumjobcha = jobcha 
+bysort pidp (wave) : replace sumjobcha = sumjobcha[_n-1] if (sumjobcha[_n-1] >= 1) & jobcha == 0 & sumjobcha[_n-1] != .
+bysort pidp (wave) : replace sumjobcha = sumjobcha[_n-1] + 1 if (sumjobcha[_n-1] >= 1) & jobcha == 1 & sumjobcha[_n-1] != .
+bysort pidp (wave) : replace sumjobcha = sumjobcha[_n-1] if (sumjobcha[_n-1] >= 1) & jobcha == 0 & sumjobcha[_n-1] != .
+
+tab sumjobcha
+
+*working hours
+tab jbhrs, m //2.36% missing - not random - some were ask the self-employment question
+tab jbsemp jshrs // yes, self-employement filtering was used 
+
+tab jshrs
+
+gen workhrs = jbhrs if jbhrs >= 0
+replace workhrs = jshrs if workhrs == . & jshrs >= 0 // use self-employment question for those that are employed but got the 
+replace workhrs = 60 if workhrs > 60 & workhrs !=. 
+tab workhrs, m // 'only' 0.86% missings 
+
+
+*permanent job
+tab jbterm1, m 
+
+gen permjob = .
+replace permjob = 0 if jbterm1 == 2
+replace permjob = 1 if jbterm1 == 1
+
+label define permjob 0 "not permanent" 1 "permanent"
+label values permjob permjob
+
+tab permjob, m
+
+
+
+******************
+*sex
+tab sex
+
+gen sex_dif = D.sex
+tab sex_dif
+
+*sex in last observations
+
+
+foreach n of numlist 1/10 {
+local t = (`n' + 1)
+bysort pidp (wave) : replace sex = 1 if sex[_n+1] == 1 
+bysort pidp (wave) : replace sex = 2 if sex[_n+1] == 2
+
+}
+
+gen sex_dif1 = D.sex
+tab sex_dif1
+
+
+************************
+*ever cared
+
+bysort  pidp (wave): egen ever_cared = max(care)
+replace ever_cared = 1 if ever_cared == 2
+tab ever_cared
+
+*******************
+*variable to split by care in household or outside household
+
+*drop ever_inhh ever_outhh
+gen inhh = aidhh if aidhh > 0
+tab inhh, m
+
+gen outhh = aidxhh if aidxhh > 0
+
+*in or outside care, yes no
+bysort  pidp (wave): egen ever_inhh = min(inhh)
+tab ever_inhh
+bysort  pidp (wave): egen ever_outhh = min(outhh) 
+tab ever_outhh
+
+*put it in one variable
+*drop care_place
+gen care_place = 0 if ever_cared == 0
+replace care_place = 1 if ever_cared == 1 & ever_inhh == 1 & ever_outhh != 1  // only inside household
+replace care_place = 2 if ever_cared == 1 & ever_outhh == 1 & ever_inhh != 1  // only outside household
+replace care_place = 3 if ever_cared == 1 & ever_inhh == 1 & ever_outhh == 1  // both in- and outside household
+
+tab care_place, m
+
+
+
+label define care_place 0 "no care" 1 "only inside household" 2 "only outside household" 3 "in an outside household"
+label values care_place care_place
+
+
+tab care_place, m
+
+************************************************
+*Exclude missings
+
+
+*listwise deletion
+egen miss=rowmiss(jbsat care_dur care_stable age partner children sumjobch workhrs permjob) 
+tab miss, m
+
+tab miss workhrs if workhrs == . , m
+
+tab miss age if age == . , m
+
+tab miss permjob if permjob == . , m
+
+tab workhrs permjob if workhrs == ., m
+
+*inclusion criteria 3- no missings 
+keep if miss==0 
+tab jbstat
+xtdescribe
+
+*at least two waves - inclusion criteria 4 
+bysort pidp: gen count = _N  
+drop if count == 1
+tab jbstat
+xtdescribe
+
+
+***************************************************
+***************************************************
+***************************************************
+************************************************
+*Descriptives
+***************************************************
+***************************************************
+***************************************************
+
+*relationship to care recipient
+tab ppno
+tab aidhu1 if aidhu1 > 0 // other relative outside the household 7.25% for first relationship -these could be children
+
+*first relationship in household a child? 
+tab aidhua1 allch01 , row
+tab aidhua1 allch02, row
+tab aidhua1 allch03, row
+tab aidhua1 allch04, row // all 0%
+
+*second relationship in household a child? 
+tab aidhua2 allch01 , row //0.24
+tab aidhua2 allch02 , row //0.16
+tab aidhua2 allch03, row
+tab aidhua2 allch04 , row
+
+*third relationship in household a child? 
+tab aidhua3 allch01 , row // 0.19
+tab aidhua3 allch02 , row 
+tab aidhua3 allch03, row
+tab aidhua3 allch04 , row
+
+
+*cared for partner within household?
+tab aidhua1 ppno if aidhua1 > 0, row
+tab aidhua2 ppno if aidhua2 > 0, row
+
+*How many repondents (sumobservation = 1 equals number of observations) + how many have 10 waves
+bysort pidp: gen sumobservation = _n
+tab sumobservation
+
+********************************
+*Table 1
+*********************************
+*wave 1
+asdoc sum jbsat age sumjobch workhrs if wave == 1, dec(2) tzok save(stage_descriptivesdoc_numeric_wave1) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 1, dec(4) tzok save(stage_descriptivesdoc_binary_wave1) replace 
+
+
+*wave 2
+asdoc sum jbsat age sumjobch workhrs if wave == 2, dec(2) tzok save(stage_descriptivesdoc_numeric_wave2) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 2, dec(4) tzok save(stage_descriptivesdoc_binary_wave2) replace 
+
+*wave 3
+asdoc sum jbsat age sumjobch workhrs if wave == 3, dec(2) tzok save(stage_descriptivesdoc_numeric_wave3) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 3, dec(4) tzok save(stage_descriptivesdoc_binary_wave3) replace 
+
+*wave 4
+asdoc sum jbsat age sumjobch workhrs if wave == 4, dec(2) tzok save(stage_descriptivesdoc_numeric_wave4) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 4, dec(4) tzok save(stage_descriptivesdoc_binary_wave4) replace 
+
+*wave 5
+asdoc sum jbsat age sumjobch workhrs if wave == 5, dec(2) tzok save(stage_descriptivesdoc_numeric_wave5) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 5, dec(4) tzok save(stage_descriptivesdoc_binary_wave5) replace 
+
+*wave 6
+asdoc sum jbsat age sumjobch workhrs if wave == 6, dec(2) tzok save(stage_descriptivesdoc_numeric_wave6) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 6, dec(4) tzok save(stage_descriptivesdoc_binary_wave6) replace 
+
+*wave 7
+asdoc sum jbsat age sumjobch workhrs if wave == 7, dec(2) tzok save(stage_descriptivesdoc_numeric_wave7) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 7, dec(4) tzok save(stage_descriptivesdoc_binary_wave7) replace 
+
+*wave 8
+asdoc sum jbsat age sumjobch workhrs if wave == 8, dec(2) tzok save(stage_descriptivesdoc_numeric_wave8) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 8, dec(4) tzok save(stage_descriptivesdoc_binary_wave8) replace 
+
+*wave 9
+asdoc sum jbsat age sumjobch workhrs if wave == 9, dec(2) tzok save(stage_descriptivesdoc_numeric_wave9) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 9, dec(4) tzok save(stage_descriptivesdoc_binary_wave9) replace 
+
+*wave 10
+asdoc sum jbsat age sumjobch workhrs if wave == 10, dec(2) tzok save(stage_descriptivesdoc_numeric_wave10) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if wave == 10, dec(4) tzok save(stage_descriptivesdoc_binary_wave10) replace 
+
+**********************
+
+*care on respondent level
+bysort  pidp (wave): egen max_wave = max(wave)
+
+tab care_stable if wave == max_wave
+
+tab care_dur if wave == max_wave
+
+
+
+*Changes 
+****************************
+*generate change variables
+gen jbsat_dif = D.jbsat
+tab jbsat_dif
+
+tab jbsat_dif wave, m
+
+*Job statisfaction changes
+gen jbstat_diff_t2 = 0 if jbsat_dif == 0
+replace  jbstat_diff_t2 = 1 if jbsat_dif < 0 & jbsat_dif != .
+replace  jbstat_diff_t2 = 2 if jbsat_dif > 0 & jbsat_dif != .
+
+label define jbstat_diff_t2 1 "negative change" 0 "stable" 2"positive change"
+label values jbstat_diff_t2 jbstat_diff_t2
+
+asdoc tab jbstat_diff_t2 wave, col dec(2) tzok save(stage_change_jobstat) replace 
+
+*intensity variable change
+gen care_stable_dif = D.care_stable
+tab care_stable_dif
+
+gen care_stable_dif_t2 = . 
+replace care_stable_dif_t2 = 0 if care_stable_dif == 0
+bysort pidp: replace care_stable_dif_t2 = 1 if care_stable_dif == 1 & care_stable[_n-1] == 0 //start non-intensive care
+bysort pidp: replace care_stable_dif_t2 = 2 if care_stable_dif > 0 & care_stable_dif_t2 == . & wave != 1  & care_stable_dif != . //start intensive care
+
+
+label define care_stable_dif_t2 0 "stable" 1 "begin non-intensive caregiving" 2 "begin intensive caregiving"
+label values care_stable_dif_t2 care_stable_dif_t2
+
+tab care_stable_dif_t2 care_stable_dif
+asdoc tab care_stable_dif_t2 wave, col dec(2) tzok save(stage_change_care_intensity) replace 
+
+
+tab care_stable_dif_t2 sex, col // more changes for women? slightly yes 
+tab care_stable_dif_t2 sex, chi // more changes for women? slightly yes, chi indicates significant more changes 
+
+
+*duration variable change
+gen care_dur_dif = D.care_dur
+tab care_dur_dif
+tab care_dur_dif wave
+
+
+gen care_dur_dif_t2 = . 
+replace care_dur_dif_t2 = 0 if care_dur_dif == 0
+bysort pidp: replace care_dur_dif_t2 = 1 if care_dur_dif == 1 & care_dur[_n-1] == 0
+bysort pidp: replace care_dur_dif_t2 = 2 if care_dur_dif == 1 & care_dur[_n-1] == 1
+
+label define care_dur_dif_t2 0 "stable" 1 "started newly caregiving" 2 "started sequential caregiving"
+label values care_dur_dif_t2 care_dur_dif_t2
+
+tab care_dur_dif_t2, m
+tab care_dur_dif_t2 care_dur_dif
+asdoc tab care_dur_dif_t2 wave, col dec(2) tzok save(stage_change_care_dur) replace 
+
+tab care_dur_dif_t2 sex, col // more changes for women? slightly yes 
+tab care_dur_dif_t2 sex, chi // more changes for women? slightly yes, chi indicates significant more changes 
+
+*************************************************
+*************************************************
+*************************************************
+*Figure 2 on overall changes
+*************************************************
+*************************************************
+*************************************************
+
+gen helpi = " "
+
+
+
+*Job changes
+
+tab jbstat_diff_t2
+
+catplot, over(jbstat_diff_t2) percent(helpi) nofill bar(1, fcolor(gs8) lstyle(none)) bar(2, fcolor(gs6) lstyle(none))  recast(bar)  graphregion(color(white)) /// 
+ blabel(bar, format(%9.0f)) title("Job statisfaction", color(black))  ///
+ytitle("%") b1title("") saving(jobstat, replace) 
+graph export change_carestable.png, replace
+
+
+
+*care by intensity
+tab care_stable_dif_t2
+
+catplot, over(care_stable_dif_t2) percent(helpi) nofill bar(1, fcolor(gs8) lstyle(none)) bar(2, fcolor(gs6) lstyle(none))  recast(bar) graphregion(color(white)) /// 
+ blabel(bar, format(%9.0f)) title("Caregiving intensity", color(black))  ///
+ytitle("%") b1title("") saving(carestable, replace)
+graph export change_carestable.png, replace
+
+
+*care by duration
+tab care_dur_dif_t2
+
+catplot, over (care_dur_dif_t2) percent(helpi) nofill bar(1, fcolor(gs8) lstyle(none)) bar(2, fcolor(gs6) lstyle(none))  recast(bar)  graphregion(color(white)) /// 
+ blabel(bar, format(%9.0f)) title("Caregiving duration", color(black))  ///
+ytitle("%") b1title("") saving(caredur, replace)
+graph export change_caredur.png, replace
+
+
+*combine figures 
+graph combine jobstat.gph carestable.gph caredur.gph, cols(1)ycommon graphregion(color(white))  title("Observed changes", color(black) size(medium))  iscale(.7)
+graph export figure2.png, replace width(2000)
+graph export figure2.eps, replace 
+
+*******************************************************
+* Table A1 - descriptives by groups
+
+*Women
+asdoc sum jbsat age sumjobch workhrs if sex == 2, dec(2) tzok save(stage_descriptivesdoc_numeric_groups) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob if sex == 2, dec(4) tzok save(stage_descriptivesdoc_binary_groups) replace 
+
+*Men 
+asdoc sum jbsat age sumjobch workhrs if sex == 1, dec(2) tzok save(stage_descriptivesdoc_numeric_groups) append 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob if sex == 1, dec(4) tzok save(stage_descriptivesdoc_binary_groups) append 
+
+*Inside household
+asdoc sum jbsat age sumjobch workhrs if care_place == 0 | care_place == 1, dec(2) tzok save(stage_descriptivesdoc_numeric_groups) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if care_place == 0 | care_place == 1, dec(4) tzok save(stage_descriptivesdoc_binary_groups) replace 
+
+
+*Outside household
+asdoc sum jbsat age sumjobch workhrs if care_place == 0 | care_place == 2, dec(2) tzok save(stage_descriptivesdoc_numeric_groups) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if care_place == 0 | care_place == 2, dec(4) tzok save(stage_descriptivesdoc_binary_groups) replace 
+
+*Mix inside and outside household
+asdoc sum jbsat age sumjobch workhrs if care_place == 0 | care_place == 3, dec(2) tzok save(stage_descriptivesdoc_numeric_groups) replace 
+
+asdoc sum i.care_stable i.care_dur i.partner i.children i.permjob i.sex if care_place == 0 | care_place == 3, dec(4) tzok save(stage_descriptivesdoc_binary_groups) replace 
+
+***************************************************
+***************************************************
+***************************************************
+* Models care intensity
+***************************************************
+***************************************************
+***************************************************
+xtreg jbsat i.care_stable age age_square partner i.children permjob, fe
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1a) label replace
+
+*other reference category
+xtreg jbsat ib1.care_stable age age_square partner i.children permjob, fe
+
+*including potential mediatores
+xtreg jbsat i.care_stable age age_square partner i.children permjob workhrs sumjobcha, fe
+margins care_stable, pwcompare(effects)
+*margins care_stable
+*marginsplot, scheme(s1mono) xtitle("Care by intensity") ytitle("Predicted job satisfaction") title("Predicted job satisfaction by care intensity")
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1b) label append
+
+*other reference category
+xtreg jbsat ib1.care_stable age age_square partner i.children permjob workhrs sumjobcha, fe
+margins care_stable, atmeans
+*margins care_stable, at(age=(15(5)40))
+*marginsplot, scheme(s1mono) xtitle("") ytitle("Predicted job satisfaction") title("Predicted job satisfaction by care intensity") recast(scatter)
+*graph export prediction_care_intense.png, replace
+
+***************************************************
+***split by sex
+***************************************************
+xtreg jbsat i.care_stable age age_square partner i.children permjob workhrs sumjobcha if sex == 1, fe // men
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1c) label append
+*other reference category
+xtreg jbsat ib1.care_stable age age_square partner i.children permjob workhrs sumjobcha if sex == 1, fe // men
+
+xtreg jbsat i.care_stable age age_square partner i.children permjob workhrs sumjobcha if sex == 2, fe // women
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1d) label append
+*other reference category
+xtreg jbsat ib1.care_stable age age_square partner i.children permjob workhrs sumjobcha if sex == 2, fe // women
+
+***************************************************
+
+***************************************************
+***split by location
+***************************************************
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha if care_place == 0 | care_place == 1, fe // inside household
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1e) label append
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha if care_place == 0 | care_place == 2, fe // outside household
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1f) label append
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha if care_place == 0 | care_place == 3, fe // in and outside side household
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 1g) label append
+***************************************************
+
+
+***************************************************
+***************************************************
+***************************************************
+* Models care duration
+***************************************************
+***************************************************
+***************************************************
+xtreg jbsat i.care_dur age age_square partner i.children permjob, fe
+outreg2 using ${data}muliple_models,  word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2a) label append
+
+*other reference category
+xtreg jbsat ib1.care_dur age age_square partner i.children permjob, fe
+
+*including potential mediatores
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha, fe
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2b) label append
+
+
+*other reference category
+xtreg jbsat ib1.care_dur age age_square partner i.children permjob  workhrs sumjobcha, fe
+
+
+
+
+***************************************************
+***split by sex
+***************************************************
+
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if sex == 1, fe // men
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2c) label append
+*other reference category
+xtreg jbsat ib1.care_dur age age_square partner i.children permjob  workhrs sumjobcha if sex == 1, fe // men
+
+
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if sex == 2, fe // women
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2d) label append
+*other reference category
+xtreg jbsat ib1.care_dur age age_square partner i.children permjob  workhrs sumjobcha if sex == 2, fe // women
+
+
+***************************************************
+***split by location
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if care_place == 0 | care_place == 1, fe // inside household
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2e) label append
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if care_place == 0 | care_place == 2, fe // outside household
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2f) label append
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if care_place == 0 | care_place == 3, fe // in and outside side household
+outreg2 using ${data}muliple_models,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Model 2g) label append
+***************************************************
+
+
+
+
+***************************************************
+***************************************************
+***************************************************
+*Marginsplots - Figure 3
+***************************************************
+***************************************************
+***************************************************
+*care intensity
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha, fe
+margins, at(care_stable = (0(1)2)) atmeans
+marginsplot, recast(bar)  title("Caregiving intensity") plotopts(barwidth(0.5) graphregion(color(white)) ///
+ytitle("Job statisfaction") scheme(s2mono)) saving(care_intensity_pred, replace)  xtitle("")  plot1opts(fcolor(gs8))  ylabel(5.1(0.1)5.3) xlabel(, angle(45))
+graph export MEM_intensity.png, replace 
+
+
+*care duration
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha, fe
+margins, at(care_dur = (0(1)2)) atmeans
+marginsplot, recast(bar)  title("Caregiving duration") plotopts(barwidth(0.5) graphregion(color(white)) ///
+ytitle("Job statisfaction") scheme(s2mono)) saving(care_dur_pred, replace)  xtitle("")  plot1opts(fcolor(gs8))  ylabel(5.1(0.1)5.3)  xlabel(, angle(45))
+graph export MEM_duration.png, replace
+
+graph combine care_intensity_pred.gph care_dur_pred.gph, ycommon graphregion(color(white))  title("Predicted job statisfaction", color(black) size(medium))  iscale(.7) 
+graph export figure3.png, replace width(2000)
+graph export figure3.eps
+
+***************************************************
+***************************************************
+***************************************************
+* Robustness checks
+***************************************************
+***************************************************
+***************************************************
+*********
+*exclude varying under 20
+
+preserve
+*at least two waves
+keep if care_stable_other != .
+bysort pidp: gen count_R1 = _N 
+tab count_R1
+
+xtreg jbsat i.care_stable_other age age_square partner i.children permjob  workhrs sumjobcha if count_R1 > 1, fe 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Excluding care 'varies below 20 hours') label replace
+restore
+***********
+*Include stopped 
+
+xtreg jbsat i.care_stable2 age age_square partner i.children permjob  workhrs sumjobcha, fe 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Including stopping) label append
+
+xtreg jbsat i.care_dur2 age age_square partner i.children permjob  workhrs sumjobcha, fe 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Including stopping) label append 
+
+
+
+
+
+*************
+*Age range change for care intensity 
+
+preserve
+*at least two waves for ealry working age
+keep if age < 40
+bysort pidp: gen count_R2 = _N 
+tab count_R2
+
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha if age < 40 & count_R2 > 1, fe // late working age 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Age range 16-39) label append
+restore
+
+
+preserve
+*at least two waves for late working age
+keep if age >= 40
+bysort pidp: gen count_R3 = _N 
+tab count_R3
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha if age >= 40  & count_R3 > 1,  fe // early working age 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Age range 40-65) label append
+restore
+
+*************
+*Age range change for care duration 
+preserve
+*at least two waves for ealry working age
+keep if age < 40
+bysort pidp: gen count_R2 = _N 
+tab count_R2
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if age < 40 & count_R2 > 1, fe // late working age 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Age range 16-39) label append 
+restore
+
+preserve
+*at least two waves for late working age
+keep if age >= 40
+bysort pidp: gen count_R3 = _N 
+tab count_R3
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if age >= 40 & count_R3 > 1 , fe // early working age 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Age range 40-65) label append 
+restore
+
+**************
+*exclude non-caregiving spells after caregiving started
+xtreg jbsat i.care_stable age age_square partner i.children permjob  workhrs sumjobcha if care_stable_without_non < 3,  fe // 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Excluding non-caregivers intensity) label append 
+
+xtreg jbsat ib1.care_stable age age_square partner i.children permjob  workhrs sumjobcha if care_stable_without_non < 3,  fe // 
+
+
+xtreg jbsat i.care_dur age age_square partner i.children permjob  workhrs sumjobcha if care_stable_without_non < 3,  fe // 
+outreg2 using ${data}robustness,   word dec(2) alpha (0.001, 0.01, 0.05) ctitle(Excluding non-caregivers duration) label append 
+xtreg jbsat ib1.care_dur age age_square partner i.children permjob  workhrs sumjobcha if care_stable_without_non < 3,  fe // 
